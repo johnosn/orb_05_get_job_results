@@ -52,6 +52,7 @@ class Orbital:
         read_auth_token:    Read the authorization token from the stored file
         gen_auth_token:     Request a new auth token from the Orbital API
         check_auth:         Validate that the auth token is still valid
+	read_job_cursor:    Get the cursor location of the last data pull
         get_results:        Get results from an Orbital job
 
     """
@@ -174,9 +175,6 @@ class Orbital:
         headers = {'Authorization': cls.access_token}
         response = cls.session.get(url, headers=headers)
 
-        # Check server response
-        # HttpResponse.status(response)
-
         # Parse response message
         response_json = response.json()
 
@@ -220,7 +218,7 @@ class Orbital:
                 cls.job_cursor = cursor_file.read()
                 LOG.info('%s Retrieved %s', mthd, cls.job_cursor)
 
-        # Attempt to generate an access token if one is not found
+        # Set job cursor to 0
         except FileNotFoundError:
             cls.job_cursor = 0
             LOG.debug('%s Orbital job cursor file not found, using %s',
