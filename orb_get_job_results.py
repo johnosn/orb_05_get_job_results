@@ -289,7 +289,7 @@ class Orbital:
                 with open(r'.\config\cursor_' + cls.job_id + '.txt', 'w') as cursor_file:
                     cursor_file.write(str(job_cursor_end))
 
-                LOG.info('%s Received results for job id %s', mthd, cls.job_id)
+                LOG.info('s Received API response for job id %s', mthd, cls.job_id)
 
                 # return the results
                 return results_data
@@ -377,6 +377,9 @@ def main():
         with open('.\\data\\' + Orbital.job_id + '.json', 'w') as out_file:
             json.dump(updated_results, out_file)
 
+    else:
+        LOG.info('%s No additional results were returned', mthd)
+
     # End logging events
     LOG.info('%s Script ended', mthd)
 
@@ -388,7 +391,7 @@ if __name__ == "__main__":
     fileConfig(r'.\config\logging.cfg',
                defaults={'logfilename': r'.\logs\script.log'})
     LOG = logging.getLogger('script_logger')
-    LOG.setLevel(logging.DEBUG)
+    LOG.setLevel(logging.INFO)    # set to logging.DEBUG for more detailed logs
 
     # Execute main function
     main()
