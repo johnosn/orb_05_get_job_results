@@ -1,5 +1,3 @@
-# -*- coding: utf-8 -*-
-
 """
 Collect Job Results from Cisco Orbital.
 
@@ -8,18 +6,18 @@ Description
     Send a request to Cisco Orbital for the JSON results of a specified
     job id.
 
-	You will need to configure the SecureX client_id, and client_secret
-	in the .\config\api.cfg file.
-	
-	You will need to configure the Orbital job id in the .\config\api.cfg
-	file.
+
+Version 0.2 Update
+------------------
+    Allow for the script to process multiple jobs
 
 
 Version 0.1 Initial
 -------------------
     Authentication to Orbital
     Retrieve results from a defined Orbital job id
-    Write results to a JSON output file .\data\<job_id>.json
+    Write results to a JSON output file
+    Store cursor for use in next pull attempt
 
 """
 
@@ -31,6 +29,9 @@ import json
 import requests
 from requests.auth import HTTPBasicAuth
 
+__version__ = "0.2"
+__status__ = "Development"
+__date__ = "August 20, 2020"
 
 class Orbital:
     """
@@ -45,14 +46,13 @@ class Orbital:
         limit:          Orbital API Results limit
         session:        Orbital API HTTPS session
         access_token:   Orbital OAuth2 token
-        job_id:         Orbital Job ID to retrieve
 
     Methods
     -------
         read_auth_token:    Read the authorization token from the stored file
         gen_auth_token:     Request a new auth token from the Orbital API
         check_auth:         Validate that the auth token is still valid
-	read_job_cursor:    Get the cursor location of the last data pull
+        read_job_cursor:    Read the current position to pull job data
         get_results:        Get results from an Orbital job
 
     """
@@ -69,7 +69,7 @@ class Orbital:
     client = config.get('ORB', 'api_client')
     secret = config.get("ORB", 'api_secret')
     limit = config.get('ORB', 'api_limit')
-    job_id = config.get('ORB', 'job_id')
+    job_ids = config.items("ORB_JOBS")
 
     # Create an Orbital session
     session = requests.session()
@@ -175,6 +175,9 @@ class Orbital:
         headers = {'Authorization': cls.access_token}
         response = cls.session.get(url, headers=headers)
 
+        # Check server response
+        # HttpResponse.status(response)
+
         # Parse response message
         response_json = response.json()
 
@@ -193,7 +196,7 @@ class Orbital:
             cls.gen_auth_token()
 
     @classmethod
-    def read_job_cursor(cls):
+    def read_job_cursor(cls, job_id):
         """
         Read cursor location for the job from disk.
 
@@ -214,18 +217,18 @@ class Orbital:
 
         # Attempt to read the access token from the file
         try:
-            with open(r'.\config\cursor_' + cls.job_id + '.txt', 'r') as cursor_file:
+            with open(r'.\config\cursor_' + job_id + '.txt', 'r') as cursor_file:
                 cls.job_cursor = cursor_file.read()
                 LOG.info('%s Retrieved %s', mthd, cls.job_cursor)
 
-        # Set job cursor to 0
+        # Attempt to generate an access token if one is not found
         except FileNotFoundError:
             cls.job_cursor = 0
             LOG.debug('%s Orbital job cursor file not found, using %s',
                       mthd, cls.job_cursor)
 
     @classmethod
-    def get_results(cls):
+    def get_results(cls, job_id):
         """
         Get results for a provided job id.
 
@@ -241,22 +244,22 @@ class Orbital:
         # Set logging references and varaibles
         mthd = 'ORBITAL.GET_RESULTS:'
         results_data = []
-        cls.read_job_cursor()
+        cls.read_job_cursor(job_id)
 
-        LOG.info('%s Begining to collect data for job id %s', mthd, cls.job_id)
+        LOG.info('%s Begining to collect data for job id %s', mthd, job_id)
 
         job_cursor_init = cls.job_cursor
 
         # Start Getting results
         while True:
-            url = "{0}jobs/{1}/results".format(cls.url, cls.job_id)
+            url = "{0}jobs/{1}/results".format(cls.url, job_id)
 
             # Check if authentication token is still valid
             Orbital.check_auth()
 
             # Gather data from the results api
             LOG.debug('%s Checking for results from job id %s using cursor %s',
-                      mthd, cls.job_id, cls.job_cursor)
+                      mthd, job_id, cls.job_cursor)
             headers = {'Authorization': cls.access_token,
                        'Content-Type': 'application/json'}
             payload = {'limit': cls.limit,
@@ -286,10 +289,10 @@ class Orbital:
                 job_cursor_end = job_cursor_init + result_length
 
                 # write cursor location to disk
-                with open(r'.\config\cursor_' + cls.job_id + '.txt', 'w') as cursor_file:
+                with open(r'.\config\cursor_' + job_id + '.txt', 'w') as cursor_file:
                     cursor_file.write(str(job_cursor_end))
 
-                LOG.info('s Received API response for job id %s', mthd, cls.job_id)
+                LOG.info('%s Received API response for job id %s', mthd, job_id)
 
                 # return the results
                 return results_data
@@ -351,34 +354,36 @@ def main():
     # Start logging events
     LOG.info('%s Script initiated', mthd)
 
-    # Get Orbital Authentication Token
-    Orbital.read_auth_token()
+    for key, job_id in Orbital.job_ids:
 
-    # Check Orbital results
-    results = Orbital.get_results()
+        # Get Orbital Authentication Token
+        Orbital.read_auth_token()
 
-    # Check for new results
-    if len(results) > 0:
+        # Check Orbital results
+        results = Orbital.get_results(job_id)
 
-        # Open previous results
-        try:
-            with open('.\\data\\' + Orbital.job_id + '.json', 'r') as prev_results_file:
-                prev_results = json.load(prev_results_file)
-                LOG.info('%s Opened the jobs previous results', mthd)
+        # Check for new results
+        if len(results) > 0:
 
-        except FileNotFoundError:
-            prev_results = []
-            LOG.debug('%s Previous results were not found', mthd)
+            # Open previous results
+            try:
+                with open('.\\data\\' + job_id + '.json', 'r') as prev_results_file:
+                    prev_results = json.load(prev_results_file)
+                    LOG.info('%s Opened the jobs previous results', mthd)
 
-        # Append new results to previous
-        updated_results = prev_results + results
+            except FileNotFoundError:
+                prev_results = []
+                LOG.debug('%s Previous results were not found', mthd)
 
-        # Write results to disk
-        with open('.\\data\\' + Orbital.job_id + '.json', 'w') as out_file:
-            json.dump(updated_results, out_file)
+            # Append new results to previous
+            updated_results = prev_results + results
 
-    else:
-        LOG.info('%s No additional results were returned', mthd)
+            # Write results to disk
+            with open('.\\data\\' + job_id + '.json', 'w') as out_file:
+                json.dump(updated_results, out_file)
+
+        else:
+            LOG.info('%s No additional results were returned', mthd)
 
     # End logging events
     LOG.info('%s Script ended', mthd)
@@ -391,7 +396,7 @@ if __name__ == "__main__":
     fileConfig(r'.\config\logging.cfg',
                defaults={'logfilename': r'.\logs\script.log'})
     LOG = logging.getLogger('script_logger')
-    LOG.setLevel(logging.INFO)    # set to logging.DEBUG for more detailed logs
+    LOG.setLevel(logging.INFO)  # set to logging.DEBUG for more detailed logs
 
     # Execute main function
     main()
