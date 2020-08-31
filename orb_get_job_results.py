@@ -275,24 +275,30 @@ class Orbital:
             LOG.debug('%s Received X-Orbital-Request-Id %s dated %s',
                       mthd, req_id, received)
 
-            # Test for error response and try again later if so
+            # Get
             response_json = response.json()
 
             # Locate results in the JSON file
             json_results = response_json['results']
 
+            # Determine if last results
+            len_new = len(results_data) + len(json_results)
+            len_if_more = len(results_data) + int(cls.limit)
+
             # Check if there were any new results
-            if json_results is None:
+            if len_if_more > len_new:
                 # Determine last cursor location
                 job_cursor_init = int(job_cursor_init)
                 result_length = int(len(results_data))
                 job_cursor_end = job_cursor_init + result_length
 
                 # write cursor location to disk
-                with open(r'.\config\cursor_' + job_id + '.txt', 'w') as cursor_file:
+                with open(r'.\config\cursor_' + job_id + '.txt',
+                          'w') as cursor_file:
                     cursor_file.write(str(job_cursor_end))
 
-                LOG.info('%s Received API response for job id %s', mthd, job_id)
+                LOG.info('%s Received API response for job id %s',
+                         mthd, job_id)
 
                 # return the results
                 return results_data
