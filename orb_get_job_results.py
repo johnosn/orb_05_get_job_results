@@ -6,11 +6,14 @@ Description
     Send a request to Cisco Orbital for the JSON results of a specified
     job id.
 
+Version 0.3 Update
+------------------
+    Allow for collectioning non-full page results
+    Change output location
 
 Version 0.2 Update
 ------------------
     Allow for the script to process multiple jobs
-
 
 Version 0.1 Initial
 -------------------
@@ -29,9 +32,9 @@ import json
 import requests
 from requests.auth import HTTPBasicAuth
 
-__version__ = "0.2"
+__version__ = "0.3"
 __status__ = "Development"
-__date__ = "August 20, 2020"
+__date__ = "October 19, 2020"
 
 class Orbital:
     """
@@ -217,7 +220,8 @@ class Orbital:
 
         # Attempt to read the access token from the file
         try:
-            with open(r'.\config\cursor_' + job_id + '.txt', 'r') as cursor_file:
+            with open(r'.\output\cursor\cursor_' + job_id + '.txt',
+                      'r') as cursor_file:
                 cls.job_cursor = cursor_file.read()
                 LOG.info('%s Retrieved %s', mthd, cls.job_cursor)
 
@@ -287,20 +291,23 @@ class Orbital:
 
             # Check if there were any new results
             if len_if_more > len_new:
+                # Append the results
+                results_data += json_results
+
                 # Determine last cursor location
                 job_cursor_init = int(job_cursor_init)
                 result_length = int(len(results_data))
                 job_cursor_end = job_cursor_init + result_length
 
-                # write cursor location to disk
-                with open(r'.\config\cursor_' + job_id + '.txt',
+                # Write cursor location to disk
+                with open(r'.\output\cursor\cursor_' + job_id + '.txt',
                           'w') as cursor_file:
                     cursor_file.write(str(job_cursor_end))
 
                 LOG.info('%s Received API response for job id %s',
                          mthd, job_id)
 
-                # return the results
+                # Return the results
                 return results_data
 
             # Append results and set the next cursor location
@@ -373,8 +380,8 @@ def main():
 
             # Open previous results
             try:
-                with open('.\\data\\' + job_id + '.json', 'r') as prev_results_file:
-                    prev_results = json.load(prev_results_file)
+                with open('.\\output\\job_data\\' + job_id + '.json', 'r') as pr_file:
+                    prev_results = json.load(pr_file)
                     LOG.info('%s Opened the jobs previous results', mthd)
 
             except FileNotFoundError:
@@ -385,8 +392,11 @@ def main():
             updated_results = prev_results + results
 
             # Write results to disk
-            with open('.\\data\\' + job_id + '.json', 'w') as out_file:
+            with open('.\\output\\job_data\\' + job_id + '.json', 'w') as out_file:
                 json.dump(updated_results, out_file)
+
+            LOG.debug('%s wrote last cursor position for %s as %s',
+                      mthd, job_id, updated_results)
 
         else:
             LOG.info('%s No additional results were returned', mthd)
@@ -400,7 +410,7 @@ if __name__ == "__main__":
 
     # Setup Logging
     fileConfig(r'.\config\logging.cfg',
-               defaults={'logfilename': r'.\logs\script.log'})
+               defaults={'logfilename': r'.\output\logs\script.log'})
     LOG = logging.getLogger('script_logger')
     LOG.setLevel(logging.INFO)  # set to logging.DEBUG for more detailed logs
 
