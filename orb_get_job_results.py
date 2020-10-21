@@ -6,6 +6,11 @@ Description
     Send a request to Cisco Orbital for the JSON results of a specified
     job id.
 
+Version 0.4 Update
+------------------
+    Added new and accumulated results count to logging
+    Error handling for when results are None
+
 Version 0.3 Update
 ------------------
     Allow for collectioning non-full page results
@@ -32,9 +37,9 @@ import json
 import requests
 from requests.auth import HTTPBasicAuth
 
-__version__ = "0.3"
+__version__ = "0.4"
 __status__ = "Development"
-__date__ = "October 19, 2020"
+__date__ = "October 21, 2020"
 
 class Orbital:
     """
@@ -286,8 +291,14 @@ class Orbital:
             json_results = response_json['results']
 
             # Determine if last results
-            len_new = len(results_data) + len(json_results)
-            len_if_more = len(results_data) + int(cls.limit)
+            try:
+                len_new = len(results_data) + len(json_results)
+                len_if_more = len(results_data) + int(cls.limit)
+
+            # Condition for no new results
+            except TypeError:
+                LOG.debug('%s No new results were received')
+                return
 
             # Check if there were any new results
             if len_if_more > len_new:
@@ -306,6 +317,8 @@ class Orbital:
 
                 LOG.info('%s Received API response for job id %s',
                          mthd, job_id)
+                LOG.info('%s New Results %s', mthd, result_length)
+                LOG.info('%s Accumulated Results %s', mthd, job_cursor_end)
 
                 # Return the results
                 return results_data
@@ -376,7 +389,7 @@ def main():
         results = Orbital.get_results(job_id)
 
         # Check for new results
-        if len(results) > 0:
+        if not (results is None) and len(results) > 0:
 
             # Open previous results
             try:
