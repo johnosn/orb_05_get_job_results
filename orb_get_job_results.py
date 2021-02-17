@@ -9,6 +9,8 @@ Description
 Version 0.5 Update
 ------------------
     Incremental data logging added
+    No longer write OAuth2 token to disk
+    Use token exiprey date to determine if a new one is needed
 
 Version 0.4 Update
 ------------------
@@ -37,6 +39,7 @@ import configparser
 import logging
 from logging.config import fileConfig
 import json
+from datetime import datetime
 from time import sleep
 import requests
 from requests.auth import HTTPBasicAuth
@@ -60,12 +63,12 @@ class Orbital:
         limit:          Orbital API Results limit
         session:        Orbital API HTTPS session
         access_token:   Orbital OAuth2 token
+        token_expire:   Time the OAuth2 token expires
+        cursor:         Position of new Orbital results
 
     Methods
     -------
-        read_auth_token:    Read the authorization token from the stored file
         gen_auth_token:     Request a new auth token from the Orbital API
-        check_auth:         Validate that the auth token is still valid
         read_cursor:        Read the current cursor position from disk
         write_cursor:       Write the current cursor position from disk
         fetch_results:      Gathers results from the API
@@ -91,27 +94,8 @@ class Orbital:
     # CREATE AN ORBITAL SESSION
     session = requests.session()
     access_token = ''
+    token_expire = ''
     cursor = ''
-
-    @classmethod
-    def read_auth_token(cls):
-        """Read authentication token from disk location."""
-        # SET LOGGING REFERENCES
-        mthd = 'ORBITAL.READ_AUTH_TOKEN:'
-
-        # TRY TO OPEN TOKEN FILE
-        LOG.debug('%s Attempting to read access token from disk.', mthd)
-
-        # ATTEMPT TO READ THE ACCESS TOKEN FROM THE FILE
-        try:
-            with open('.\\config\\orb_token', 'r') as token_file:
-                cls.access_token = token_file.read()
-                LOG.debug('%s Retrieved %s...', mthd, cls.access_token[0:20])
-
-        # ATTEMPT TO GENERATE AN ACCESS TOKEN IF ONE IS NOT FOUND
-        except FileNotFoundError:
-            LOG.debug('%s Orbital token file not found', mthd)
-            cls.gen_auth_token()
 
     @classmethod
     def gen_auth_token(cls):
@@ -135,49 +119,15 @@ class Orbital:
             LOG.error('%s Response Error: %s', mthd, err)
 
         # PARSE AUTH TOKEN
-        response_json = response.json()
-        cls.access_token = 'Bearer ' + response_json['token']
+        r_json = response.json()
+        cls.access_token = 'Bearer ' + r_json['token']
+        cls.token_expire = datetime.strptime(r_json['expiry'][0:26],
+                                             '%Y-%m-%dT%H:%M:%S.%f')
+
         LOG.debug('%s Recieved access token: %s...',
                   mthd, cls.access_token[0:20])
-
-        # SAVE AUTH TOKEN TO DISK
-        LOG.debug('%s Writting access token to disk', mthd)
-        with open('.\\config\\orb_token', 'w') as token_file:
-            token_file.write(cls.access_token)
-
-    @classmethod
-    def check_auth(cls):
-        """Check if authentication token is valid."""
-        # SET LOGGING REFERENCES
-        mthd = 'ORBITAL.CHECK_AUTH:'
-
-        # REQUEST TOKEN STATUS
-        LOG.debug('%s Checking authentication token', mthd)
-        url = cls.url + 'ok'
-        headers = {'Authorization': cls.access_token}
-        response = cls.session.get(url, headers=headers)
-
-        # CHECK SERVER RESPONSE
-        try:
-            response.raise_for_status()
-        except requests.exceptions.HTTPError as err:
-            LOG.error('%s Response Error: %s', mthd, err)
-
-        # PARSE RESPONSE MESSAGE
-        response_json = response.json()
-
-        # GET A NEW AUTHENTICATION TOKEN IF NOT OK
-        try:
-            message = response_json['message']
-            if message == 'OK':
-                LOG.debug('%s Authentication token is OK', mthd)
-            else:
-                LOG.error('%s Recieved error %s, requesting new token',
-                          mthd, message)
-                cls.gen_auth_token()
-        except KeyError:
-            LOG.debug('%s Recieved error, requesting new token', mthd)
-            cls.gen_auth_token()
+        LOG.debug('%s Token valid until: %s',
+                  mthd, r_json['expiry'])
 
     @classmethod
     def read_cursor(cls, job_id):
@@ -189,7 +139,7 @@ class Orbital:
         LOG.debug('%s Attempting to read last cursor location from disk', mthd)
 
         # ATTEMPT TO READ THE ACCESS TOKEN FROM THE FILE
-        cursor_path = r'.\output\cursor\cursor_' + job_id + '.txt'
+        cursor_path = r'.\output\cursor_' + job_id + '.txt'
         try:
             with open(cursor_path, 'r') as cursor_file:
                 cls.cursor = cursor_file.read()
@@ -211,7 +161,7 @@ class Orbital:
         # WRITE CURSOR LOCATION TO DISK
         LOG.debug('%s write cursor position for %s as %s',
                   mthd, job_id, str(cls.cursor))
-        with open(r'.\output\cursor\cursor_' + job_id + '.txt',
+        with open(r'.\output\cursor_' + job_id + '.txt',
                   'w') as cursor_file:
             cursor_file.write(str(cls.cursor))
             cursor_file.close()
@@ -224,7 +174,13 @@ class Orbital:
 
         # CHECK IF AUTHENTICATION TOKEN IS STILL VALID
         LOG.debug('%s Check OAuth token', mthd)
-        Orbital.check_auth()
+        delta = abs((cls.token_expire - datetime.utcnow()).seconds)
+        if delta < 120:
+            LOG.debug('%s OAuth token expires in less than 2 minutes', mthd)
+            cls.gen_auth_token()
+        else:
+            LOG.debug('%s OAuth token good for another %s seconds',
+                      mthd, str(delta))
 
         # GATHER DATA FROM THE RESULTS API
         LOG.debug('%s Checking for results from job id %s using cursor %s',
@@ -282,9 +238,11 @@ class Orbital:
                     with open(out_path, 'w') as out_file:
                         json.dump(updated_results, out_file)
                         out_file.close()
+                    LOG.debug('%s Results writen for job_id %s on attempt %s',
+                              mthd, job_id, str(i + 1))
                 except PermissionError as err:
                     LOG.error('%s PermissionError for job id %s on attempt %s',
-                              mthd, job_id, str(i))
+                              mthd, job_id, str(i + 1))
                     LOG.error('%s %s', mthd, err)
                     sleep(20)
                     if i < attempts - 1:
@@ -304,14 +262,14 @@ class Orbital:
         # SET LOGGING REFERENCES AND VARAIBLES
         mthd = 'ORBITAL.GET_RESULTS:'
         cls.read_cursor(job_id)
-        cls.read_auth_token()
         next_value = int(cls.cursor)
+        cls.gen_auth_token()
         LOG.debug('%s Begining to collect data for job id %s', mthd, job_id)
         LOG.debug('%s Begining at cursor location %s', mthd, str(next_value))
 
         # START GETTING RESULTS
         while True:
-            # Get results data
+            # GET RESULTS DATA
             LOG.debug('%s call fetch_results for job id %s', mthd, job_id)
             response = cls.fetch_results(job_id)
             r_json = response.json()
@@ -329,7 +287,8 @@ class Orbital:
             # CHECK IF LAST ITTERATION
             if diff == int(cls.limit):
                 LOG.debug('%s updating results for job id %s', mthd, job_id)
-                # Append results and set the next cursor location
+
+                # APPEND RESULTS AND SET THE NEXT CURSOR LOCATION
                 LOG.debug('%s call write_results for job id %s', mthd, job_id)
                 cls.write_results(job_id, results)
                 cls.cursor = int(r_json['next'])
@@ -369,9 +328,9 @@ if __name__ == "__main__":
 
     # SETUP LOGGING
     fileConfig(r'.\config\logging.cfg',
-               defaults={'logfilename': r'.\output\logs\script.log'})
+               defaults={'logfilename': r'.\output\script.log'})
     LOG = logging.getLogger('script_logger')
-    LOG.setLevel(logging.INFO)  # SET TO LOGGING.DEBUG FOR MORE DETAILED LOGS
+    LOG.setLevel(logging.DEBUG)  # SET TO LOGGING.DEBUG FOR MORE DETAILED LOGS
 
     # EXECUTE MAIN FUNCTION
     main()
