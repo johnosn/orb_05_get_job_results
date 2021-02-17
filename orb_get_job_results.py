@@ -74,21 +74,21 @@ class Orbital:
 
     """
 
-    # Set the config file path
+    # SET THE CONFIG FILE PATH
     cfg_file = r'.\config\api.cfg'
 
-    # Read the config file
+    # READ THE CONFIG FILE
     config = configparser.ConfigParser()
     config.read(cfg_file)
 
-    # Parse settings from config file and assign to class attributes
+    # PARSE SETTINGS FROM CONFIG FILE AND ASSIGN TO CLASS ATTRIBUTES
     url = config.get('ORB', 'api_base_url')
     client = config.get('ORB', 'api_client')
     secret = config.get("ORB", 'api_secret')
     limit = config.get('ORB', 'api_limit')
     job_ids = config.items("ORB_JOBS")
 
-    # Create an Orbital session
+    # CREATE AN ORBITAL SESSION
     session = requests.session()
     access_token = ''
     cursor = ''
@@ -96,19 +96,19 @@ class Orbital:
     @classmethod
     def read_auth_token(cls):
         """Read authentication token from disk location."""
-        # Set logging references
+        # SET LOGGING REFERENCES
         mthd = 'ORBITAL.READ_AUTH_TOKEN:'
 
-        # Try to open token file
+        # TRY TO OPEN TOKEN FILE
         LOG.debug('%s Attempting to read access token from disk.', mthd)
 
-        # Attempt to read the access token from the file
+        # ATTEMPT TO READ THE ACCESS TOKEN FROM THE FILE
         try:
             with open('.\\config\\orb_token', 'r') as token_file:
                 cls.access_token = token_file.read()
                 LOG.debug('%s Retrieved %s...', mthd, cls.access_token[0:20])
 
-        # Attempt to generate an access token if one is not found
+        # ATTEMPT TO GENERATE AN ACCESS TOKEN IF ONE IS NOT FOUND
         except FileNotFoundError:
             LOG.debug('%s Orbital token file not found', mthd)
             cls.gen_auth_token()
@@ -116,35 +116,31 @@ class Orbital:
     @classmethod
     def gen_auth_token(cls):
         """Generate a new Orbital authentication token."""
-        # Set logging references
+        # SET LOGGING REFERENCES
         mthd = 'ORBITAL.GEN_AUTH_TOKEN:'
 
-        # Request Auth Token
+        # REQUEST AUTH TOKEN
         LOG.debug('%s Attempting to generate access token', mthd)
         url = cls.url + 'oauth2/token'
         payload = 'grant_type=client_credentials'
         headers = {'Content-Type': "application/x-www-form-urlencoded",
                    'Accept': "application/json"}
-        response = cls.session.post(url,
-                                    data=payload,
-                                    headers=headers,
-                                    auth=HTTPBasicAuth(cls.client,
-                                                       cls.secret)
-                                    )
+        response = cls.session.post(url, data=payload, headers=headers,
+                                    auth=HTTPBasicAuth(cls.client, cls.secret))
 
-        # Check server response
+        # CHECK SERVER RESPONSE
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
             LOG.error('%s Response Error: %s', mthd, err)
 
-        # Parse auth token
+        # PARSE AUTH TOKEN
         response_json = response.json()
         cls.access_token = 'Bearer ' + response_json['token']
         LOG.debug('%s Recieved access token: %s...',
                   mthd, cls.access_token[0:20])
 
-        # Save auth token to disk
+        # SAVE AUTH TOKEN TO DISK
         LOG.debug('%s Writting access token to disk', mthd)
         with open('.\\config\\orb_token', 'w') as token_file:
             token_file.write(cls.access_token)
@@ -152,33 +148,32 @@ class Orbital:
     @classmethod
     def check_auth(cls):
         """Check if authentication token is valid."""
-        # Set logging references
+        # SET LOGGING REFERENCES
         mthd = 'ORBITAL.CHECK_AUTH:'
 
-        # Request token status
+        # REQUEST TOKEN STATUS
         LOG.debug('%s Checking authentication token', mthd)
         url = cls.url + 'ok'
         headers = {'Authorization': cls.access_token}
         response = cls.session.get(url, headers=headers)
 
-        # Check server response
+        # CHECK SERVER RESPONSE
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
             LOG.error('%s Response Error: %s', mthd, err)
 
-        # Parse response message
+        # PARSE RESPONSE MESSAGE
         response_json = response.json()
 
-        # Get a new authentication token if not OK
+        # GET A NEW AUTHENTICATION TOKEN IF NOT OK
         try:
             message = response_json['message']
             if message == 'OK':
                 LOG.debug('%s Authentication token is OK', mthd)
             else:
                 LOG.error('%s Recieved error %s, requesting new token',
-                          mthd,
-                          message)
+                          mthd, message)
                 cls.gen_auth_token()
         except KeyError:
             LOG.debug('%s Recieved error, requesting new token', mthd)
@@ -187,20 +182,21 @@ class Orbital:
     @classmethod
     def read_cursor(cls, job_id):
         """Read cursor location for the job from disk."""
-        # Set logging references
+        # SET LOGGING REFERENCES
         mthd = 'ORBITAL.READ_CURSOR:'
 
-        # Try to open token file
+        # TRY TO OPEN TOKEN FILE
         LOG.debug('%s Attempting to read last cursor location from disk', mthd)
 
-        # Attempt to read the access token from the file
+        # ATTEMPT TO READ THE ACCESS TOKEN FROM THE FILE
+        cursor_path = r'.\output\cursor\cursor_' + job_id + '.txt'
         try:
-            with open(r'.\output\cursor\cursor_' + job_id + '.txt',
-                      'r') as cursor_file:
+            with open(cursor_path, 'r') as cursor_file:
                 cls.cursor = cursor_file.read()
+                cursor_file.close()
                 LOG.debug('%s Retrieved %s', mthd, cls.cursor)
 
-        # Attempt to generate an access token if one is not found
+        # ATTEMPT TO GENERATE AN ACCESS TOKEN IF ONE IS NOT FOUND
         except FileNotFoundError:
             cls.cursor = 0
             LOG.debug('%s Orbital job cursor file not found, using %s',
@@ -209,10 +205,10 @@ class Orbital:
     @classmethod
     def write_cursor(cls, job_id):
         """Update the location in the cursor file."""
-        # Set logging references and varaibles
+        # SET LOGGING REFERENCES AND VARAIBLES
         mthd = 'ORBITAL.WRITE_CURSOR:'
 
-        # Write cursor location to disk
+        # WRITE CURSOR LOCATION TO DISK
         LOG.debug('%s write cursor position for %s as %s',
                   mthd, job_id, str(cls.cursor))
         with open(r'.\output\cursor\cursor_' + job_id + '.txt',
@@ -223,31 +219,29 @@ class Orbital:
     @classmethod
     def fetch_results(cls, job_id):
         """Fetch results for a provided job id from the API."""
-        # Set logging references and varaibles
+        # SET LOGGING REFERENCES AND VARAIBLES
         mthd = 'ORBITAL.FETCH_RESULTS:'
 
-        url = "{0}jobs/{1}/results".format(cls.url, job_id)
-
-        # Check if authentication token is still valid
+        # CHECK IF AUTHENTICATION TOKEN IS STILL VALID
         LOG.debug('%s Check OAuth token', mthd)
         Orbital.check_auth()
 
-        # Gather data from the results api
+        # GATHER DATA FROM THE RESULTS API
         LOG.debug('%s Checking for results from job id %s using cursor %s',
                   mthd, job_id, cls.cursor)
+        url = "{0}jobs/{1}/results".format(cls.url, job_id)
         headers = {'Authorization': cls.access_token,
                    'Content-Type': 'application/json'}
-        payload = {'limit': cls.limit,
-                   'cursor': cls.cursor}
+        payload = {'limit': cls.limit, 'cursor': cls.cursor}
         response = cls.session.get(url, headers=headers, params=payload)
 
-        # Check server response
+        # CHECK SERVER RESPONSE
         try:
             response.raise_for_status()
         except requests.exceptions.HTTPError as err:
             LOG.error('%s Response Error: %s', mthd, err)
 
-        # Get the 'X-Orbital-Request-Id'
+        # GET THE 'X-ORBITAL-REQUEST-ID'
         LOG.debug('%s Received X-Orbital-Request-Id %s dated %s',
                   mthd, response.headers['X-Orbital-Request-Id'],
                   response.headers['Date'])
@@ -257,16 +251,16 @@ class Orbital:
     @classmethod
     def write_results(cls, job_id, results):
         """Write results to the output file."""
-        # Set logging references and varaibles
+        # SET LOGGING REFERENCES AND VARAIBLES
         mthd = 'ORBITAL.WRITE_RESULTS:'
 
-        # Check for new results
+        # CHECK FOR NEW RESULTS
         LOG.debug('%s check size of results for job id %s', mthd, job_id)
         if not (results is None) and len(results) > 0:
 
-            # Open previous results
+            # OPEN PREVIOUS RESULTS
             LOG.debug('%s check previous results for job id %s', mthd, job_id)
-            out_path = '.\\output\\job_data\\' + job_id + '.json'
+            out_path = '.\\output\\' + job_id + '.json'
             try:
                 with open(out_path, 'r') as pr_file:
                     prev_results = json.load(pr_file)
@@ -277,10 +271,10 @@ class Orbital:
                 prev_results = []
                 LOG.debug('%s Previous results were not found', mthd)
 
-            # Append new results to previous
+            # APPEND NEW RESULTS TO PREVIOUS
             updated_results = prev_results + results
 
-            # Write results to disk
+            # WRITE RESULTS TO DISK
             LOG.debug('%s write results for job id %s', mthd, job_id)
             attempts = 4
             for i in range(attempts):
@@ -307,24 +301,22 @@ class Orbital:
     @classmethod
     def get_results(cls, job_id):
         """Get results for a provided job id."""
-        # Set logging references and varaibles
+        # SET LOGGING REFERENCES AND VARAIBLES
         mthd = 'ORBITAL.GET_RESULTS:'
         cls.read_cursor(job_id)
         cls.read_auth_token()
-
-        LOG.debug('%s Begining to collect data for job id %s', mthd, job_id)
-
         next_value = int(cls.cursor)
+        LOG.debug('%s Begining to collect data for job id %s', mthd, job_id)
         LOG.debug('%s Begining at cursor location %s', mthd, str(next_value))
 
-        # Start Getting results
+        # START GETTING RESULTS
         while True:
             # Get results data
             LOG.debug('%s call fetch_results for job id %s', mthd, job_id)
             response = cls.fetch_results(job_id)
             r_json = response.json()
 
-            # Locate results in the JSON file
+            # LOCATE RESULTS IN THE JSON FILE
             results = r_json['results']
 
             prev_value = next_value
@@ -344,10 +336,10 @@ class Orbital:
                 LOG.debug('%s call write_cursor for job id %s', mthd, job_id)
                 cls.write_cursor(job_id)
 
-            # Check if there were any new results
+            # CHECK IF THERE WERE ANY NEW RESULTS
             else:
                 LOG.debug('%s last results for job id %s', mthd, job_id)
-                # Append the results
+                # APPEND THE RESULTS
                 LOG.debug('%s call write_results for job id %s', mthd, job_id)
                 cls.write_results(job_id, results)
                 cls.cursor = int(r_json['next'])
@@ -358,28 +350,28 @@ class Orbital:
 
 def main():
     """Gather data for incident, ci, and user and print out the results."""
-    # Set logging references
+    # SET LOGGING REFERENCES
     mthd = 'MAIN:'
 
-    # Start logging events
+    # START LOGGING EVENTS
     LOG.info('%s Script initiated', mthd)
 
     for value in Orbital.job_ids:
-        # Check Orbital results
+        # CHECK ORBITAL RESULTS
         Orbital.get_results(value[1])
 
-    # End logging events
+    # END LOGGING EVENTS
     LOG.info('%s Script ended', mthd)
 
 
-# startup the script and initialize main
+# STARTUP THE SCRIPT AND INITIALIZE MAIN
 if __name__ == "__main__":
 
-    # Setup Logging
+    # SETUP LOGGING
     fileConfig(r'.\config\logging.cfg',
                defaults={'logfilename': r'.\output\logs\script.log'})
     LOG = logging.getLogger('script_logger')
-    LOG.setLevel(logging.INFO)  # set to logging.DEBUG for more detailed logs
+    LOG.setLevel(logging.INFO)  # SET TO LOGGING.DEBUG FOR MORE DETAILED LOGS
 
-    # Execute main function
+    # EXECUTE MAIN FUNCTION
     main()
