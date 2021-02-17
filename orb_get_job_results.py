@@ -330,7 +330,7 @@ if __name__ == "__main__":
     fileConfig(r'.\config\logging.cfg',
                defaults={'logfilename': r'.\output\script.log'})
     LOG = logging.getLogger('script_logger')
-    LOG.setLevel(logging.DEBUG)  # SET TO LOGGING.DEBUG FOR MORE DETAILED LOGS
+    LOG.setLevel(logging.INFO)  # SET TO LOGGING.DEBUG FOR MORE DETAILED LOGS
 
     # EXECUTE MAIN FUNCTION
     main()
