@@ -8,7 +8,7 @@ Description
 
 Version 0.5 Update
 ------------------
-    Incremental data logging added
+    Incremental data writing added
     No longer write OAuth2 token to disk
     Use token exiprey date to determine if a new one is needed
 
